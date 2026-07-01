@@ -1,0 +1,6 @@
+FROM elementsproject/lightningd:latest
+
+RUN apt update && apt install -y jq curl && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/bootstrap-nodes.sh /root/.lightning/lightning-poststart.d/01-bootstrap.sh
+RUN chmod +x /root/.lightning/lightning-poststart.d/01-bootstrap.sh
