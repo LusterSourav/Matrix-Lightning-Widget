@@ -142,34 +142,6 @@ services:
     volumes:
       - ./config/element/config.json:/app/config.json:ro
 
-  build-complete:
-    image: alpine:latest
-    restart: "no"
-    networks: [sovereign-net]
-    depends_on:
-      matrix-init: { condition: service_completed_successfully }
-    volumes:
-      - data:/data
-      - cln-a-data:/cln-a:ro
-      - synapse-data:/synapse-data:ro
-    command:
-      - /bin/sh
-      - -c
-      - |
-        echo "waiting for bootstrap + admin..."
-        for i in $$(seq 1 60); do
-          if [ -f /cln-a/.channels_done ] && [ -f /synapse-data/.admin_created ]; then
-            echo "all gates passed"
-            mkdir -p /data && touch /data/.build-complete
-            exit 0
-          fi
-          [ -f /cln-a/.channels_done ] && echo "  channels: ready" || echo "  channels: waiting"
-          [ -f /synapse-data/.admin_created ] && echo "  admin: ready" || echo "  admin: waiting"
-          sleep 5
-        done
-        echo "timeout waiting for build"
-        exit 1
-
   gateway:
     image: nginx:alpine
     restart: unless-stopped
