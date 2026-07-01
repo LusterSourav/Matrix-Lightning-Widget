@@ -170,7 +170,6 @@ services:
          .done{color:#22c55e}
          .pending{color:#888;animation:pulse 2s ease-in-out infinite}
          @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-         .active{color:#f7931a}
          .bar{height:4px;background:#222;border-radius:2px;margin-top:1.5rem;overflow:hidden}
          .bar-fill{height:100%;width:100%;background:linear-gradient(90deg,#222 0%,#f7931a 30%,#fbbf24 50%,#f7931a 70%,#222 100%);background-size:200% 100%;animation:slide 2s linear infinite}
          @keyframes slide{0%{background-position:200% 0}100%{background-position:-200% 0}}

@@ -203,5 +203,4 @@ WIDGET
   echo "  widget HTML written"
 fi
 
-touch "$LIGHTNINGD_DATA/.channels_done"
 echo "=== bootstrap done ==="
