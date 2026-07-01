@@ -1,0 +1,4 @@
+# SHA-256 checksums for CLN source tarballs
+# Update when upgrading CLN_VERSION in .env
+# Compute: curl -sL https://github.com/ElementsProject/lightning/archive/refs/tags/v24.11.tar.gz | sha256sum
+# placeholder_hash_confirm_with_actual_release  v24.11
