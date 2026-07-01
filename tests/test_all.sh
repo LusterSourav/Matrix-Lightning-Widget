@@ -2,7 +2,7 @@
 set -uo pipefail
 
 # Matrix Lightning Widget — Comprehensive test suite
-# ponytail: single self-contained bash script, 33 tests, one file
+# ponytail: single self-contained bash script, 39 tests, one file
 # Run: bash tests/test_all.sh
 
 PASS=0
@@ -33,7 +33,7 @@ NODEB_ID=$(docker compose exec -T lightningd-b lightning-cli --network=regtest g
 
 echo "
 ╔════════════════════════════════════════╗
-║   Lightning Widget — 33 Test Suite    ║
+║   Lightning Widget — 39 Test Suite    ║
 ╚════════════════════════════════════════╝"
 
 # === SECTION 1: Infrastructure (8 tests) ===
