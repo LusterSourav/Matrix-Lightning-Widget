@@ -1,0 +1,18 @@
+{
+  "default_server_config": {
+    "m.homeserver": {
+      "base_url": "http://citadel.test",
+      "server_name": "citadel.local"
+    }
+  },
+  "disable_3pid_login": true,
+  "enable_registration": true,
+  "integrations_ui_url": null,
+  "integrations_rest_url": null,
+  "integrations_widgets_urls": null,
+  "features": {
+    "feature_widget": true,
+    "feature_element_call": false
+  },
+  "default_federate": false
+}
