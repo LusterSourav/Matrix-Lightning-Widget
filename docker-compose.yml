@@ -1,0 +1,231 @@
+services:
+  bitcoind:
+    image: bitcoin/bitcoin:27.1
+    restart: unless-stopped
+    networks: [sovereign-net]
+    volumes:
+      - data:/data
+    command: >
+      -printtoconsole -regtest=1 -server=1 -txindex=1
+      -datadir=/data
+      -rpcallowip=0.0.0.0/0 -rpcbind=0.0.0.0
+      -rpcuser=citadel -rpcpassword=${BITCOIN_RPC_PASSWORD}
+      -fallbackfee=0.0002 -minrelaytxfee=0.00001
+    healthcheck:
+      test: ["CMD-SHELL", "bitcoin-cli -regtest -rpcuser=citadel -rpcpassword=${BITCOIN_RPC_PASSWORD} ping >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+      start_period: 15s
+
+  lightningd-a:
+    build:
+      context: .
+      dockerfile: Dockerfile.cln
+    hostname: lightningd-a
+    restart: unless-stopped
+    networks: [sovereign-net]
+    depends_on:
+      bitcoind: { condition: service_healthy }
+    environment:
+      BITCOIN_RPC_PASSWORD: ${BITCOIN_RPC_PASSWORD}
+      LIGHTNINGD_NETWORK: regtest
+    volumes:
+      - cln-a-data:/root/.lightning
+      - cln-b-data:/cln-b:ro
+      - data:/data
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        mkdir -p /root/.lightning/regtest &&
+        rm -f /root/.lightning/regtest/lightning-rpc &&
+        exec /entrypoint.sh --bitcoin-rpcconnect=bitcoind --bitcoin-rpcuser=citadel --bitcoin-rpcpassword=${BITCOIN_RPC_PASSWORD} --addr=0.0.0.0:9735 --clnrest-port=3010 --clnrest-protocol=http --clnrest-host=0.0.0.0 --alias=node-a --rgb=ff9900 --rpc-file-mode=0777 --log-level=debug
+    healthcheck:
+      test: ["CMD-SHELL", "lightning-cli --network=regtest getinfo >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
+  lightningd-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.cln
+    hostname: lightningd-b
+    restart: unless-stopped
+    networks: [sovereign-net]
+    depends_on:
+      bitcoind: { condition: service_healthy }
+    environment:
+      BITCOIN_RPC_PASSWORD: ${BITCOIN_RPC_PASSWORD}
+      LIGHTNINGD_NETWORK: regtest
+    volumes:
+      - cln-b-data:/root/.lightning
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        mkdir -p /root/.lightning/regtest &&
+        rm -f /root/.lightning/regtest/lightning-rpc &&
+        exec /entrypoint.sh --bitcoin-rpcconnect=bitcoind --bitcoin-rpcuser=citadel --bitcoin-rpcpassword=${BITCOIN_RPC_PASSWORD} --addr=0.0.0.0:9735 --clnrest-port=3010 --clnrest-protocol=http --clnrest-host=0.0.0.0 --alias=node-b --rgb=00aaff --rpc-file-mode=0777
+    healthcheck:
+      test: ["CMD-SHELL", "lightning-cli --network=regtest getinfo >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
+  synapse:
+    image: matrixdotorg/synapse:latest
+    entrypoint: /bin/sh
+    restart: unless-stopped
+    networks: [sovereign-net]
+    depends_on:
+      bitcoind: { condition: service_healthy }
+    environment:
+      SYNAPSE_SERVER_NAME: citadel.local
+      SYNAPSE_REPORT_STATS: no
+    volumes:
+      - synapse-data:/data
+    command:
+      - -c
+      - |
+        if [ ! -f /data/homeserver.yaml ]; then
+          /start.py generate
+          printf '\n' >> /data/homeserver.yaml
+          echo "enable_registration: true" >> /data/homeserver.yaml
+          echo "enable_registration_without_verification: true" >> /data/homeserver.yaml
+        fi
+        exec /start.py run
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8008/_matrix/client/versions >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  matrix-init:
+    image: matrixdotorg/synapse:latest
+    entrypoint: /bin/sh
+    restart: "no"
+    networks: [sovereign-net]
+    depends_on:
+      synapse: { condition: service_healthy }
+    environment:
+      SYNAPSE_SERVER_NAME: citadel.local
+      MATRIX_ADMIN_PASSWORD: ${MATRIX_ADMIN_PASSWORD}
+    volumes:
+      - synapse-data:/data
+    command:
+      - -c
+      - |
+        if [ ! -f /data/.admin_created ]; then
+          for i in $$(seq 1 20); do
+            if curl -sf http://synapse:8008/health >/dev/null 2>&1; then
+              register_new_matrix_user -u admin -p "$${MATRIX_ADMIN_PASSWORD}" -a \
+                -c /data/homeserver.yaml http://synapse:8008 && \
+                touch /data/.admin_created
+              echo "admin user created"
+              break
+            fi
+            sleep 2
+          done
+        else
+          echo "admin already exists"
+        fi
+
+  element:
+    image: vectorim/element-web:v1.11.58
+    restart: unless-stopped
+    networks: [sovereign-net]
+    volumes:
+      - ./config/element/config.json:/app/config.json:ro
+
+  gateway:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports: ["80:80"]
+    networks: [sovereign-net]
+    volumes:
+      - data:/data
+    command:
+      - /bin/sh
+      - -c
+      - |
+        cat > /usr/share/nginx/html/index.html <<'BUILD_HTML'
+        <!DOCTYPE html>
+        <html lang="en">
+        <head><meta charset="UTF-8"><meta http-equiv="refresh" content="5">
+        <title>Sovereign Build - citadel.local</title>
+        <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#0a0a0a;color:#c0c0c0;font-family:monospace;display:flex;justify-content:center;align-items:center;min-height:100vh}
+        .wrap{max-width:680px;width:90%}
+        h1{color:#f7931a;font-size:1.5rem;margin-bottom:0.25rem}
+        .sub{color:#666;font-size:0.8rem;margin-bottom:2rem}
+        .stage{background:#111;border:1px solid #222;border-radius:6px;padding:1rem;margin-bottom:1rem}
+        .stage h3{color:#888;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem}
+        .stage .line{font-size:0.85rem;line-height:1.6}
+         .done{color:#22c55e}
+         .pending{color:#888;animation:pulse 2s ease-in-out infinite}
+         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+         .bar{height:4px;background:#222;border-radius:2px;margin-top:1.5rem;overflow:hidden}
+         .bar-fill{height:100%;width:100%;background:linear-gradient(90deg,#222 0%,#f7931a 30%,#fbbf24 50%,#f7931a 70%,#222 100%);background-size:200% 100%;animation:slide 2s linear infinite}
+         @keyframes slide{0%{background-position:200% 0}100%{background-position:-200% 0}}
+        .footer{text-align:center;margin-top:2rem;font-size:0.7rem;color:#444}
+        </style>
+        </head>
+        <body>
+        <div class="wrap">
+        <h1>Sovereign Stack</h1>
+        <p class="sub">citadel.local - Bitcoin Freedom Stack</p>
+        <div class="stage">
+        <h3>Bitcoin Core</h3>
+        <div class="line"><span class="done">OK</span> bitcoind regtest started</div>
+        <div class="line"><span class="pending"></span> generating 101 blocks</div>
+        <div class="line"><span class="pending"></span> wallet funded</div>
+        </div>
+        <div class="stage">
+        <h3>Core Lightning</h3>
+        <div class="line"><span class="pending"></span> lightningd-a: waiting for sync</div>
+        <div class="line"><span class="pending"></span> lightningd-b: waiting for sync</div>
+        <div class="line"><span class="pending"></span> channel: waiting for peers</div>
+        </div>
+        <div class="stage">
+        <h3>Matrix</h3>
+        <div class="line"><span class="pending"></span> synapse: starting</div>
+        <div class="line"><span class="pending"></span> admin user: pending</div>
+        </div>
+        <div class="stage">
+        <h3>Gateway</h3>
+        <div class="line"><span class="pending"></span> nginx: waiting for build</div>
+        </div>
+        <div class="bar"><div class="bar-fill"></div></div>
+        <p class="footer">Auto-refreshes every 5s. Redirects to Element Web when ready.</p>
+        </div>
+        </body>
+        </html>
+        BUILD_HTML
+
+        printf 'server { listen 80; root /usr/share/nginx/html; index index.html; charset utf-8; location / { try_files $$uri $$uri/ /index.html; } }\n' > /etc/nginx/conf.d/default.conf
+
+        nginx -g 'daemon off;' &
+        NGINX_PID=$!
+
+        while [ ! -f /data/default.conf ]; do sleep 2; done
+        cat /data/default.conf > /etc/nginx/conf.d/default.conf
+        nginx -s reload
+        echo "gateway: switched to prod config"
+
+        wait $$NGINX_PID
+
+networks:
+  sovereign-net:
+    driver: bridge
+
+volumes:
+  data:
+  cln-a-data:
+  cln-b-data:
+  synapse-data:
